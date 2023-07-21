@@ -4,15 +4,18 @@ use num_traits::{Float, NumAssignOps};
 use std::iter::{Product, Sum};
 use std::ops::{AddAssign, SubAssign};
 use std::{
+    fmt,
     fmt::Debug,
-    ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub},
+    ops::{Add, Div, Index, IndexMut, Mul, Sub},
 };
+// use crate::num::{min, max};
+use std::cmp::{min, max};
 use libblas;
 
-pub mod utils;
+mod utils;
 use utils::{One, Zero};
 
-pub mod blas;
+mod blas;
 
 /// Macro for quickly creating 1D or 2D arrays
 #[macro_export]
@@ -27,10 +30,10 @@ macro_rules! arr {
 
 /// A general NdArray (multi-dimensional
 /// array type)
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
+#[derive(Clone, PartialEq, Eq, PartialOrd)]
 pub struct NdArray<T: Clone, const N: usize> {
-    pub shape: [usize; N],
-    pub data: Vec<T>,
+    shape: [usize; N],
+    data: Vec<T>,
 }
 
 impl<T: Clone, const N: usize> NdArray<T, N> {
@@ -82,6 +85,11 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         }
     }
 
+    /// Create a new NdArray from a nested vector.
+    /// This is usually not used directly; instead,
+    /// use the macro [`arr!`] instead.
+    /// 
+    /// [`arr`]: #macro.arr
     pub fn from_vec2(array: Vec<[T; N]>) -> NdArray<T, 2>
     where
         T: Debug,
@@ -103,15 +111,18 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     }
 
     /// Allows for iterating through elements
-    /// of a NdArray
+    /// of an NdArray
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         self.data.iter()
     }
 
+    /// Returns the first element of an NdArray
     pub fn first(&self) -> Option<&T> {
         self.data.first()
     }
 
+    /// Perform an operation on every element of
+    /// a NdArray and return a new array correspondingly
     pub fn mapv<B, F>(&self, f: F) -> NdArray<B, N>
     where
         T: Clone,
@@ -125,6 +136,8 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         }
     }
 
+    /// Performs [`NdArray::mapv`] and mutates the NdArray
+    /// directly instead of returning a new NdArray
     pub fn mmapv<F>(&mut self, f: F) 
     where
         T: Clone,
@@ -134,6 +147,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data = data;
     }
 
+    /// Fill an NdArray with a value
     pub fn fill(&mut self, val: T) {
         self.data = vec![val; self.shape.iter().product()]
     }
@@ -193,6 +207,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         NdArray::from(vec, [len; N])
     }
 
+    /// Find the largest element in an NdArray
     pub fn max(&self) -> T
     where
         T: Ord,
@@ -200,6 +215,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data.iter().max().unwrap().clone()
     }
 
+    /// Find the smallest element in an NdArray
     pub fn min(&self) -> T
     where
         T: Ord,
@@ -207,6 +223,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data.iter().min().unwrap().clone()
     }
 
+    /// Sum an NdArray
     pub fn sum(&self) -> T
     where
         T: Clone + Sum,
@@ -214,6 +231,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data.iter().cloned().sum()
     }
 
+    /// Take the product of an NdArray
     pub fn product(&self) -> T
     where
         T: Clone + Product,
@@ -221,6 +239,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data.iter().cloned().product()
     }
 
+    /// Find the mean of an NdArray
     pub fn mean(&self) -> T
     where
         T: Clone + Sum + Div<usize, Output = T>,
@@ -228,6 +247,8 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.sum() / self.len()
     }
 
+    /// Perform the operation `self += alpha * rhs`
+    /// on an NdArray
     pub fn scaled_add(&mut self, alpha: T, rhs: &NdArray<T, N>) 
     where T: Float + NumAssignOps
     {
@@ -249,6 +270,50 @@ impl<const N: usize> NdArray<f64, N> {
     }
 }
 
+fn _display_inner<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, array: &NdArray<T, N>, axis: usize, offset: usize) -> std::fmt::Result {
+    // Source: https://stackoverflow.com/questions/76735487/implementation-of-debug-for-ndarray-causes-subtraction-underflow-error
+    let axisindent = min(2, max(0, array.shape.len().saturating_sub(axis + 1)));
+    if axis < array.shape.len() {
+        f.write_str("[")?;
+        for (k_index, k) in (0..array.shape[axis]).into_iter().enumerate() {
+            if k_index > 0 {
+                for _ in 0..axisindent {
+                    f.write_str("\n         ")?;
+                    for _ in 0..axis {
+                        f.write_str(" ")?;
+                    }
+                }
+            }
+            let offset_ = offset + k;
+            _display_inner(f, array, axis + 1, offset_)?;
+            if k_index < &array.shape[axis] - 1 {
+                f.write_str(", ")?;
+            }
+        }
+        f.write_str("]")?;
+    } else {
+        f.write_str(format!("{:?}", array.data[offset]).as_str())?;
+    }
+    Ok(())
+}
+
+impl<T: Clone, const N: usize> Debug for NdArray<T, N> 
+where T: Debug
+{ 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.shape.len() {
+            0 => write!(f, "NdArray([])"),
+            1 => write!(f, "NdArray({:?}, shape={:?})", self.data, self.shape),
+            _ => {
+                f.write_str("NdArray(")?;
+                _display_inner(f, &self, 0, 0)?;
+                f.write_str(format!(", shape={:?})", self.shape).as_str())?;
+                Ok(())
+            }
+        }
+    }
+}
+
 impl NdArray<f64, 1> {
     /// Creates a equally linearly-spaced vector
     pub fn linspace(x_start: f64, x_end: f64, n_samples: i32) -> NdArray<f64, 1> {
@@ -261,6 +326,11 @@ impl NdArray<f64, 1> {
 }
 
 impl<T: Clone> NdArray<T, 1> {
+    /// Create an NdArray from a 1D vector; this is
+    /// usually not used directly, but instead is
+    /// called from [`arr!`]
+    /// 
+    /// [`arr!`]: #macro.arr
     pub fn from_vec1(array: Vec<T>) -> NdArray<T, 1> {
         let shape = [array.len()];
         NdArray { shape, data: array }
@@ -276,6 +346,7 @@ impl NdArray<f64, 2> {
         NdArray::from(matmul_vec, shape)
     }
 
+    /// Transposes a matrix
     pub fn transpose(&self) -> NdArray<f64, 2> {
         let transpose_vec = blas::transpose(&self.data, self.shape[0], self.shape[1]);
         let mut shape = self.shape;
