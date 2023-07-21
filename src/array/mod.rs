@@ -1,11 +1,13 @@
 use crate::num::randf;
 use elara_log::prelude::*;
+use num_traits::{Float, NumAssignOps};
 use std::iter::{Product, Sum};
 use std::ops::{AddAssign, SubAssign};
 use std::{
     fmt::Debug,
     ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub},
 };
+use libblas;
 
 pub mod utils;
 use utils::{One, Zero};
@@ -78,11 +80,6 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
             shape,
             data: Vec::new(),
         }
-    }
-
-    pub fn from_vec1(array: Vec<T>) -> Self {
-        let shape = [array.len(); N];
-        NdArray { shape, data: array }
     }
 
     pub fn from_vec2(array: Vec<[T; N]>) -> NdArray<T, 2>
@@ -180,17 +177,13 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     /// another NdArray
     pub fn dot(&self, other: &NdArray<T, N>) -> T
     where
-        T: Clone + Zero + Mul<Output = T>,
+        T: Float + NumAssignOps
     {
         if self.len() != other.len() {
-            error!("[elara-math] Dot product cannot be found between NdArrays of shape {} and {}, consider using matmul()",
-        self.len(), other.len())
+            error!("[elara-math] Dot product cannot be found between NdArrays of shape {:?} and {:?}, consider using matmul()",
+        self.shape, other.shape)
         }
-        let mut product = T::zero();
-        for i in 0..self.len() {
-            product = product + self.data[i].clone() + other.data[i].clone()
-        }
-        product
+        libblas::level1::dot(self.len(), &self.data, 1, &other.data, 1)
     }
 
     /// Create a NdArray from a range of values
@@ -234,6 +227,15 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     {
         self.sum() / self.len()
     }
+
+    pub fn scaled_add(&mut self, alpha: T, rhs: &NdArray<T, N>) 
+    where T: Float + NumAssignOps
+    {
+        if self.shape != rhs.shape {
+            error!("[elara-array] Attempting to add two ndarrays of differing shapes {:?} and {:?}", self.shape, rhs.shape);
+        }
+        libblas::level1::axpy(self.len(), alpha, &rhs.data, 1, &mut self.data, 1);
+    }
 }
 
 impl<const N: usize> NdArray<f64, N> {
@@ -254,6 +256,14 @@ impl NdArray<f64, 1> {
         let vec: Vec<f64> = (0..n_samples).map(|i| x_start + (i as f64) * dx).collect();
         let len = vec.len();
         NdArray::from(vec, [len])
+    }
+
+}
+
+impl<T: Clone> NdArray<T, 1> {
+    pub fn from_vec1(array: Vec<T>) -> NdArray<T, 1> {
+        let shape = [array.len()];
+        NdArray { shape, data: array }
     }
 }
 
@@ -291,60 +301,68 @@ impl<T: Clone, const N: usize> IndexMut<&[usize; N]> for NdArray<T, N> {
     }
 }
 
-// Elementwise addition
-impl<T: Clone + Add<Output = T>, const N: usize> Add<&NdArray<T, N>> for &NdArray<T, N> 
-{
-    type Output = NdArray<T, N>;
+macro_rules! impl_binary_ops {
+    [$trait:ident, $op_name:ident, $op:tt] => {
+        // Elementwise op by reference
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<&NdArray<T, N>> for &NdArray<T, N> 
+        {
+            type Output = NdArray<T, N>;
 
-    fn add(self, rhs: &NdArray<T, N>) -> Self::Output {
-        if self.shape != rhs.shape {
-            let err = format!(
-                "[elara-math] Cannot add two NdArrays of differing shapes {:?}, {:?}",
-                self.shape, rhs.shape
-            );
-            error!("{}", err);
+            fn $op_name(self, rhs: &NdArray<T, N>) -> Self::Output {
+                if self.shape != rhs.shape {
+                    error!("[elara-array] Cannot {} two NdArrays of differing shapes {:?}, {:?}", stringify!($op_name), self.shape, rhs.shape);
+                }
+
+                let output_vec = self
+                    .data
+                    .iter()
+                    .zip(&rhs.data)
+                    .map(|(a, b)| a.clone() $op b.clone())
+                    .collect();
+
+                NdArray::from(output_vec, self.shape)
+            }
         }
 
-        let sum_vec = self
-            .data
-            .iter()
-            .zip(&rhs.data)
-            .map(|(a, b)| a.clone() + b.clone())
-            .collect();
+        // Elementwise ops without reference
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<NdArray<T, N>> for NdArray<T, N> 
+        {
 
-        NdArray::from(sum_vec, self.shape)
-    }
+            type Output = NdArray<T, N>;
+
+            fn $op_name(self, rhs: NdArray<T, N>) -> Self::Output {
+                &self $op &rhs
+            }
+        }
+
+        // Scalar ops by reference
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<T> for &NdArray<T, N> 
+        {
+            type Output = NdArray<T, N>;
+        
+            fn $op_name(self, rhs: T) -> Self::Output {
+                self.mapv(|a| a $op rhs.clone())
+            }
+        }
+
+        // Scalar ops without reference
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<T> for NdArray<T, N> 
+        {
+            type Output = NdArray<T, N>;
+        
+            fn $op_name(self, val: T) -> Self::Output {
+                &self $op val
+            }
+        }
+    };
 }
 
-impl<T: Clone + Add<Output = T>, const N: usize> Add<NdArray<T, N>> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn add(self, rhs: NdArray<T, N>) -> Self::Output {
-        &self + &rhs
-    }
-}
-
-// Scalar addition
-impl<T: Clone + Add<Output = T>, const N: usize> Add<T> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn add(self, rhs: T) -> Self::Output {
-        self.mapv(|a| a + rhs.clone())
-        // let sum_vec = self.data.iter().map(|a| a.clone() + val.clone()).collect();
-        // NdArray::from(sum_vec, self.shape)
-    }
-}
-
-impl<T: Clone + Add<Output = T>, const N: usize> Add<T> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn add(self, val: T) -> Self::Output {
-        &self + val
-    }
-}
+impl_binary_ops![Add, add, +];
+impl_binary_ops![Sub, sub, -];
+impl_binary_ops![Mul, mul, *];
+impl_binary_ops![Div, div, /];
 
 // Scalar addassign
-
 impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<T> for NdArray<T, N> {
     fn add_assign(&mut self, rhs: T) {
         self.mmapv(|a| a + rhs.clone())
@@ -352,7 +370,6 @@ impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<T> for NdArray<T, N> 
         // self.data = sum_vec;
     }
 }
-
 
 
 // Elementwise addasign by reference
@@ -368,19 +385,7 @@ impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<&NdArray<T, N>> for &
     }
 }
 
-// Elementwise addassign for reference to self
-impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<&NdArray<T, N>> for NdArray<T, N> {
-    fn add_assign(&mut self, rhs: &NdArray<T, N>) {
-        let sum_vec = self
-            .data
-            .iter()
-            .zip(&rhs.data)
-            .map(|(a, b)| a.clone() + b.clone())
-            .collect();
-        self.data = sum_vec;
-    }
-}
-
+// Elementwise addassign without reference
 impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<NdArray<T, N>> for NdArray<T, N> {
     fn add_assign(&mut self, rhs: NdArray<T, N>) {
         let sum_vec: Vec<T> = self
@@ -393,30 +398,8 @@ impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<NdArray<T, N>> for Nd
     }
 }
 
-impl<T: Clone + Sub<Output = T>, const N: usize> Sub<&NdArray<T, N>> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn sub(self, rhs: &NdArray<T, N>) -> Self::Output {
-        if self.shape != rhs.shape {
-            let err = format!(
-                "[elara-math] Cannot subtract two NdArrays of differing shapes {:?}, {:?}",
-                self.shape, rhs.shape
-            );
-            error!("{}", err);
-        }
-
-        let difference_vec = self
-            .data
-            .iter()
-            .zip(&rhs.data)
-            .map(|(a, b)| a.clone() - b.clone())
-            .collect();
-
-        NdArray::from(difference_vec, self.shape)
-    }
-}
-
 // Elementwise subassign
+// recommended not to use subassign, rather use scaled_add(-1.0, rhs) instead
 impl<T: Clone + Sub<Output = T>, const N: usize> SubAssign<&NdArray<T, N>> for &mut NdArray<T, N> {
     fn sub_assign(&mut self, rhs: &NdArray<T, N>) {
         let sub_vec = self
@@ -450,122 +433,5 @@ impl<T: Clone + Sub<Output = T>, const N: usize> SubAssign<NdArray<T, N>> for Nd
             .map(|(a, b)| a.clone() - b.clone())
             .collect();
         self.data = sub_vec;
-    }
-}
-
-impl<T: Clone + Sub<Output = T>, const N: usize> Sub<NdArray<T, N>> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn sub(self, rhs: NdArray<T, N>) -> Self::Output {
-        &self - &rhs
-    }
-}
-
-// Scalar subtraction
-impl<T: Clone + Sub<Output = T>, const N: usize> Sub<T> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn sub(self, val: T) -> Self::Output {
-        // let sub_vec = self.data.iter().map(|a| a.clone() - val.clone()).collect();
-        // NdArray::from(sub_vec, self.shape)
-        self.mapv(|a| a - val.clone())
-    }
-}
-
-impl<T: Clone + Sub<Output = T>, const N: usize> Sub<T> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn sub(self, val: T) -> Self::Output {
-        &self - val
-    }
-}
-
-// Scalar multiplication
-impl<T: Clone + Mul<Output = T>, const N: usize> Mul<T> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn mul(self, val: T) -> Self::Output {
-        let mul_vec = self.data.iter().map(|a| val.clone() * a.clone()).collect();
-
-        NdArray::from(mul_vec, self.shape)
-    }
-}
-
-impl<T: Clone + Mul<Output = T>, const N: usize> Mul<T> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn mul(self, val: T) -> Self::Output {
-        (&self).mul(val)
-    }
-}
-
-// Elementwise multiplication
-impl<T: Clone + Mul<Output = T>, const N: usize> Mul<&NdArray<T, N>> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn mul(self, rhs: &NdArray<T, N>) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-        let mul_vec = self
-            .data
-            .iter()
-            .zip(&rhs.data)
-            .map(|(a, b)| a.clone() * b.clone())
-            .collect();
-        NdArray::from(mul_vec, self.shape)
-    }
-}
-
-impl<T: Clone + Mul<Output = T>, const N: usize> Mul<NdArray<T, N>> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn mul(self, rhs: NdArray<T, N>) -> Self::Output {
-        &self * &rhs
-    }
-}
-
-// Scalar division
-impl<T: Clone + Div<Output = T>, const N: usize> Div<T> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn div(self, val: T) -> Self::Output {
-        let quotient_vec = self.data.iter().map(|a| val.clone() / a.clone()).collect();
-
-        NdArray::from(quotient_vec, self.shape)
-    }
-}
-
-// Elementwise division
-impl<T: Clone + Div<Output = T>, const N: usize> Div<&NdArray<T, N>> for &NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn div(self, rhs: &NdArray<T, N>) -> Self::Output {
-        assert_eq!(self.shape, rhs.shape);
-        let div_vec = self
-            .data
-            .iter()
-            .zip(&rhs.data)
-            .map(|(a, b)| a.clone() / b.clone())
-            .collect();
-        NdArray::from(div_vec, self.shape)
-    }
-}
-
-impl<T: Clone + Div<Output = T>, const N: usize> Div<NdArray<T, N>> for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn div(self, rhs: NdArray<T, N>) -> Self::Output {
-        &self / &rhs
-    }
-}
-
-// Negation
-impl<T: Clone + Neg<Output = T>, const N: usize> Neg for NdArray<T, N> {
-    type Output = NdArray<T, N>;
-
-    fn neg(mut self) -> Self::Output {
-        for idx in 0..self.len() {
-            self.data[idx] = -(self.data[idx].clone());
-        }
-        self
     }
 }
