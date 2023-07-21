@@ -302,8 +302,11 @@ impl<T: Clone, const N: usize> IndexMut<&[usize; N]> for NdArray<T, N> {
 }
 
 macro_rules! impl_binary_ops {
-    [$trait:ident, $op_name:ident, $op:tt] => {
-        // Elementwise op by reference
+    [$trait:ident, $op_name:ident, $op:tt, $doc_type:expr] => {
+        /// Performs elementwise
+        #[doc=$doc_type]
+        /// between
+        /// `&NdArray` and `&NdArray`
         impl<T: Clone + $trait<Output = T>, const N: usize> $trait<&NdArray<T, N>> for &NdArray<T, N> 
         {
             type Output = NdArray<T, N>;
@@ -324,7 +327,34 @@ macro_rules! impl_binary_ops {
             }
         }
 
-        // Elementwise ops without reference
+        /// Performs elementwise
+        #[doc=$doc_type]
+        /// between
+        /// `NdArray` and `&NdArray`
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<&NdArray<T, N>> for NdArray<T, N>
+        {
+            type Output = NdArray<T, N>;
+
+            fn $op_name(self, rhs: &NdArray<T, N>) -> Self::Output {
+                if self.shape != rhs.shape {
+                    error!("[elara-array] Cannot {} two NdArrays of differing shapes {:?}, {:?}", stringify!($op_name), self.shape, rhs.shape);
+                }
+
+                let output_vec = self
+                    .data
+                    .iter()
+                    .zip(&rhs.data)
+                    .map(|(a, b)| a.clone() $op b.clone())
+                    .collect();
+
+                NdArray::from(output_vec, self.shape)
+            }
+        }
+
+        /// Performs elementwise
+        #[doc=$doc_type]
+        /// between
+        /// `NdArray` and `NdArray`
         impl<T: Clone + $trait<Output = T>, const N: usize> $trait<NdArray<T, N>> for NdArray<T, N> 
         {
 
@@ -357,10 +387,10 @@ macro_rules! impl_binary_ops {
     };
 }
 
-impl_binary_ops![Add, add, +];
-impl_binary_ops![Sub, sub, -];
-impl_binary_ops![Mul, mul, *];
-impl_binary_ops![Div, div, /];
+impl_binary_ops![Add, add, +, "addition"];
+impl_binary_ops![Sub, sub, -, "subtraction"];
+impl_binary_ops![Mul, mul, *, "multiplication"];
+impl_binary_ops![Div, div, /, "division"];
 
 // Scalar addassign
 impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<T> for NdArray<T, N> {
