@@ -123,27 +123,26 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
 
     /// Perform an operation on every element of
     /// a NdArray and return a new array correspondingly
-    pub fn mapv<B, F>(&self, f: F) -> NdArray<B, N>
+    pub fn mapv<B, F>(&self, mut f: F) -> NdArray<B, N>
     where
         T: Clone,
         F: FnMut(T) -> B,
         B: Clone,
     {
-        let data = self.data.clone();
         NdArray {
-            data: data.into_iter().map(f).collect(),
+            data: self.data.iter().map(move |x| f(x.clone())).collect(),
             shape: self.shape,
         }
     }
 
     /// Performs [`NdArray::mapv`] and mutates the NdArray
     /// directly instead of returning a new NdArray
-    pub fn mmapv<F>(&mut self, f: F) 
+    pub fn mapv_inplace<F>(&mut self, mut f: F) 
     where
         T: Clone,
         F: FnMut(T) -> T,
     {
-        let data = self.data.clone().into_iter().map(f).collect();
+        let data = self.data.iter().map(move |x| f(x.clone())).collect();
         self.data = data;
     }
 
@@ -208,19 +207,19 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     }
 
     /// Find the largest element in an NdArray
-    pub fn max(&self) -> T
+    pub fn max(&self) -> Option<&T>
     where
         T: Ord,
     {
-        self.data.iter().max().unwrap().clone()
+        self.data.iter().max()
     }
 
     /// Find the smallest element in an NdArray
-    pub fn min(&self) -> T
+    pub fn min(&self) -> Option<&T>
     where
         T: Ord,
     {
-        self.data.iter().min().unwrap().clone()
+        self.data.iter().min()
     }
 
     /// Sum an NdArray
@@ -466,7 +465,7 @@ impl_binary_ops![Div, div, /, "division"];
 // Scalar addassign
 impl<T: Clone + Add<Output = T>, const N: usize> AddAssign<T> for NdArray<T, N> {
     fn add_assign(&mut self, rhs: T) {
-        self.mmapv(|a| a + rhs.clone())
+        self.mapv_inplace(|a| a + rhs.clone())
         // let sum_vec = self.data.iter().map(|a| a.clone() + rhs.clone()).collect();
         // self.data = sum_vec;
     }
