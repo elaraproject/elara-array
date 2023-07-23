@@ -1,6 +1,7 @@
 use crate::num::randf;
 use elara_log::prelude::*;
 use num_traits::{Float, NumAssignOps};
+use std::fmt::Display;
 use std::iter::{Product, Sum};
 use std::ops::{AddAssign, SubAssign};
 use std::{
@@ -121,6 +122,11 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         self.data.first()
     }
 
+    /// Returns the last element of an NdArray
+    pub fn last(&self) -> Option<&T> {
+        self.data.last()
+    }
+
     /// Perform an operation on every element of
     /// a NdArray and return a new array correspondingly
     pub fn mapv<B, F>(&self, mut f: F) -> NdArray<B, N>
@@ -149,6 +155,11 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     /// Fill an NdArray with a value
     pub fn fill(&mut self, val: T) {
         self.data = vec![val; self.shape.iter().product()]
+    }
+
+    /// Returns the shape of an NdArray
+    pub fn shape(&self) -> [usize; N] {
+        self.shape
     }
 
     // Referenced https://codereview.stackexchange.com/questions/256345/n-dimensional-array-in-rust
@@ -269,6 +280,8 @@ impl<const N: usize> NdArray<f64, N> {
     }
 }
 
+// Note! This is unreliable at the moment, use Display ("{}") for more consistent
+// print formatting
 fn _display_inner<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, array: &NdArray<T, N>, axis: usize, offset: usize) -> std::fmt::Result {
     // Source: https://stackoverflow.com/questions/76735487/implementation-of-debug-for-ndarray-causes-subtraction-underflow-error
     let axisindent = min(2, max(0, array.shape.len().saturating_sub(axis + 1)));
@@ -313,9 +326,17 @@ where T: Debug
     }
 }
 
+impl<T: Clone, const N: usize> Display for NdArray<T, N>
+where T: Debug
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NdArray({:?}, shape={:?})", self.data, self.shape)
+    }
+}
+
 impl NdArray<f64, 1> {
     /// Creates a equally linearly-spaced vector
-    pub fn linspace(x_start: f64, x_end: f64, n_samples: i32) -> NdArray<f64, 1> {
+    pub fn linspace(x_start: f64, x_end: f64, n_samples: usize) -> NdArray<f64, 1> {
         let dx = (x_end - x_start) / ((n_samples - 1) as f64);
         let vec: Vec<f64> = (0..n_samples).map(|i| x_start + (i as f64) * dx).collect();
         let len = vec.len();
@@ -354,6 +375,63 @@ impl NdArray<f64, 2> {
     }
 }
 
+impl<T: Clone> NdArray<T, 2> {
+    /// Indexes the rows of a 2D matrix NdArray and returns `&[T]`
+    pub fn index(&self, idx: usize) -> &[T] {
+        let shape = self.shape;
+        if idx >= self.shape[0] {
+            error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
+        }
+        &self.data[(shape[1] * idx)..(shape[1] * idx + shape[1])]
+    }
+
+    /// Indexes the rows of a 2D matrix NdArray and returns `Vec<T>`
+    pub fn index_vec(&self, idx: usize) -> Vec<T> {
+        let shape = self.shape;
+        if idx >= self.shape[0] {
+            error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
+        }
+        self.data[(shape[1] * idx)..(shape[1] * idx + shape[1])].iter().map(|el| el.clone()).collect()
+    }
+    
+    /// Indexes the rows of a 2D matrix NdArray and returns a
+    /// flat NdArray
+    pub fn index_view(&self, idx: usize) -> NdArray<T, 1> {
+        NdArray::from_vec1(self.index_vec(idx))
+    }
+
+    /// Assigns a provided slice of values to a row of a 
+    /// 2D matrix NdArray
+    pub fn assign(&mut self, idx: usize, contents: &[T]) {
+        let shape = self.shape;
+        if idx >= self.shape[0] {
+            error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
+        }
+        if contents.len() > self.shape[1] {
+            error!("[elara-array] Tried to assign a slice with {} elements (equivalent to {} columns) when the matrix only has {} columns", contents.len(), contents.len() + 1, self.shape[1]);
+        }
+        for i in 0..contents.len() {
+            self[&[idx, i]] = contents[i].clone()
+        }
+    }
+
+    /// Assigns a provided 1D NdArray of values to a row of a 
+    /// 2D matrix NdArray
+    pub fn assign_view(&mut self, idx: usize, contents: NdArray<T, 1>) {
+        let shape = self.shape;
+        if idx >= self.shape[0] {
+            error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
+        }
+        if contents.len() > self.shape[1] {
+            error!("[elara-array] Tried to assign a slice with {} elements (equivalent to {} columns) when the matrix only has {} columns", contents.len(), contents.len() + 1, self.shape[1]);
+        }
+
+        for i in 0..contents.len() {
+            self[&[idx, i]] = contents[i].clone()
+        }
+    }
+}
+
 // Referenced https://codereview.stackexchange.com/questions/256345/n-dimensional-array-in-rust
 impl<T: Clone, const N: usize> Index<&[usize; N]> for NdArray<T, N> {
     type Output = T;
@@ -368,6 +446,22 @@ impl<T: Clone, const N: usize> IndexMut<&[usize; N]> for NdArray<T, N> {
     fn index_mut(&mut self, idx: &[usize; N]) -> &mut T {
         let i = self.get_index(idx);
         &mut self.data[i]
+    }
+}
+
+/// Convenience method for indexing 1D NdArrays
+impl<T: Clone> Index<usize> for NdArray<T, 1> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self[&[index]]
+    }
+}
+
+/// Convenience method for mutably indexing 1D NdArrays
+impl<T: Clone> IndexMut<usize> for NdArray<T, 1> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self[&[index]]
     }
 }
 
@@ -406,6 +500,30 @@ macro_rules! impl_binary_ops {
             type Output = NdArray<T, N>;
 
             fn $op_name(self, rhs: &NdArray<T, N>) -> Self::Output {
+                if self.shape != rhs.shape {
+                    error!("[elara-array] Cannot {} two NdArrays of differing shapes {:?}, {:?}", stringify!($op_name), self.shape, rhs.shape);
+                }
+
+                let output_vec = self
+                    .data
+                    .iter()
+                    .zip(&rhs.data)
+                    .map(|(a, b)| a.clone() $op b.clone())
+                    .collect();
+
+                NdArray::from(output_vec, self.shape)
+            }
+        }
+
+        /// Performs elementwise
+        #[doc=$doc_type]
+        /// between
+        /// `&NdArray` and `NdArray`
+        impl<T: Clone + $trait<Output = T>, const N: usize> $trait<NdArray<T, N>> for &NdArray<T, N>
+        {
+            type Output = NdArray<T, N>;
+
+            fn $op_name(self, rhs: NdArray<T, N>) -> Self::Output {
                 if self.shape != rhs.shape {
                     error!("[elara-array] Cannot {} two NdArrays of differing shapes {:?}, {:?}", stringify!($op_name), self.shape, rhs.shape);
                 }
