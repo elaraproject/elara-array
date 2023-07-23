@@ -14,7 +14,25 @@
 //!     let array = arr![[1.0, 2.0], [3.0, 4.0]];
 //!     println!("{:?}", array);
 //! }
+//! ```
 //! 
+//! ## Important notes on usage
+//! 
+//! `elara-array` heavily integrates with the
+//! `elara-log` library. While it can be used
+//! without `elara-log`, this means all of its
+//! errors will be silenced. To avoid this
+//! from happening, in any project that uses
+//! `elara-array`, do not forget to add the
+//! following:
+//! 
+//! ```rust
+//! use elara_log::prelude::*;
+//! 
+//! fn main() {
+//!     Logger::new().init().unwrap();
+//! }
+//! ```
 
 /// An n-dimensional data container, similar
 /// to a NumPy array
