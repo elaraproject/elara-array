@@ -327,6 +327,56 @@ fn _display_inner<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, 
     Ok(())
 }
 
+fn _print_arrays<T: Clone + Debug, const N: usize>(f: &mut std::fmt::Formatter<'_>, array: &NdArray<T, N>) -> std::fmt::Result {
+    match array.shape.len() {
+        1 => {
+            f.write_str(format!("{:?}", array.data).as_str())?;
+        },
+        2 => {
+            f.write_str("[")?;
+            for row in 0..array.shape[0] {
+                let axisindent = if row == 0 { 0 } else { 9 };
+                let newlines = if row == array.shape[0] - 1 {0 } else { 1 };
+                f.write_str(" ".repeat(axisindent).as_str())?;
+                let start_index = array.get_index(&[row, 0]); // [0][0]
+                let end_index = array.get_index(&[row, array.shape[1] - 1]); // 
+                f.write_str(format!("{:?}", &array.data[start_index..end_index + 1]).as_str())?;
+                f.write_str(",\n".repeat(newlines).as_str())?;
+            }
+            f.write_str("]")?;
+        },
+        3 => {
+            f.write_str("[")?;
+            for col in 0..array.shape[1] {
+                let outer_newlines = if col == array.shape[1] - 1 { 0 } else { 2 };
+                let outer_axisindent = if col == 0 { 0 } else { 9 };
+                f.write_str(" ".repeat(outer_axisindent).as_str())?;
+                f.write_str("[")?;
+                let start_index = array.get_index(&[col, 0, 0]);
+                let end_index = array.get_index(&[col, array.shape[1] - 1, array.shape[2] - 1]);
+                let slice = &array.data[start_index..end_index + 1];
+                for row in 0..array.shape[1] {
+                    let axisindent = if row == 0 { 0 } else { 10 };
+                    let newlines = if row == array.shape[1] - 1 {0 } else { 1 };
+                    f.write_str(" ".repeat(axisindent).as_str())?;
+                    let start_index_2d = row * array.shape[2];
+                    let end_index_2d = row * array.shape[2] + array.shape[2];
+                    f.write_str(format!("{:?}", &slice[start_index_2d..end_index_2d]).as_str())?;
+                    f.write_str(",\n".repeat(newlines).as_str())?;
+                }
+                f.write_str("]")?;
+                f.write_str("\n".repeat(outer_newlines).as_str())?;
+            }
+            f.write_str("]")?;
+        }
+        _ => {
+            let shape_str: String = array.shape.into_iter().map(|el| el.to_string()).collect::<Vec<String>>().join(" x ");
+            f.write_str(format!("[Array {}]", shape_str).as_str())?;
+        }
+    }
+    Ok(())
+}
+
 // fn display_inner_new<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, array: &NdArray<T, N>) -> std::fmt::Result {
 //     f.write_str(data)
 // }
@@ -337,11 +387,11 @@ where T: Debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.shape.len() {
             0 => write!(f, "NdArray([])"),
-            1 => write!(f, "NdArray({:?}, shape={:?})", self.data, self.shape),
+            1 => write!(f, "NdArray({:?}, shape={:?})\n", self.data, self.shape),
             _ => {
                 f.write_str("NdArray(")?;
-                _display_inner(f, &self, 0, 0)?;
-                f.write_str(format!(", shape={:?})", self.shape).as_str())?;
+                _print_arrays(f, &self)?;
+                f.write_str(format!(", shape={:?})\n", self.shape).as_str())?;
                 Ok(())
             }
         }

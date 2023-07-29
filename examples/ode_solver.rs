@@ -37,8 +37,9 @@ fn main() {
     }
     println!("{:?}", t);
 
-    for i in 0..u.shape()[0] {
-        println!("[{}, {}],", u[&[i, 0]], u[&[i, 1]]);
-    }
+    // for i in 0..u.shape()[0] {
+    //     println!("[{}, {}],", u[&[i, 0]], u[&[i, 1]]);
+    // }
+    println!("{:?}", u);
 
 }
