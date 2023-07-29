@@ -163,7 +163,7 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
     }
 
     // Referenced https://codereview.stackexchange.com/questions/256345/n-dimensional-array-in-rust
-    fn get_index(&self, idx: &[usize; N]) -> usize {
+    fn get_index(&self, idx: &[usize]) -> usize {
         let mut i = 0;
         for j in 0..self.shape.len() {
             if idx[j] >= self.shape[j] {
@@ -267,6 +267,24 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         }
         libblas::level1::axpy(self.len(), alpha, &rhs.data, 1, &mut self.data, 1);
     }
+
+    /// Find number of dimensions of an NdArray
+    pub fn ndims(&self) -> usize {
+        self.shape.len()
+    }
+
+    /// Performs the operation `self[i]`
+    pub fn index(&self, idx: usize) -> &[T] {
+        let mut start_index_slice = vec![0; self.ndims()];
+        let mut end_index_slice = vec![0; self.ndims()];
+        start_index_slice[0] = idx;
+        for i in 1..self.ndims() {
+            end_index_slice[i] = self.shape[i] - 1;
+        }
+        let start_index = self.get_index(start_index_slice.as_slice());
+        let end_index = self.get_index(end_index_slice.as_slice());
+        &self.data[start_index..end_index + 1]
+    }
 }
 
 impl<const N: usize> NdArray<f64, N> {
@@ -308,6 +326,10 @@ fn _display_inner<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, 
     }
     Ok(())
 }
+
+// fn display_inner_new<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, array: &NdArray<T, N>) -> std::fmt::Result {
+//     f.write_str(data)
+// }
 
 impl<T: Clone, const N: usize> Debug for NdArray<T, N> 
 where T: Debug
@@ -377,13 +399,13 @@ impl NdArray<f64, 2> {
 
 impl<T: Clone> NdArray<T, 2> {
     /// Indexes the rows of a 2D matrix NdArray and returns `&[T]`
-    pub fn index(&self, idx: usize) -> &[T] {
-        let shape = self.shape;
-        if idx >= self.shape[0] {
-            error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
-        }
-        &self.data[(shape[1] * idx)..(shape[1] * idx + shape[1])]
-    }
+    // pub fn index(&self, idx: usize) -> &[T] {
+    //     let shape = self.shape;
+    //     if idx >= self.shape[0] {
+    //         error!("[elara-array] Attempting to index 2D matrix with index {} (equivalent to row {}) when the matrix only has {:?} rows", idx, idx + 1, shape[1]);
+    //     }
+    //     &self.data[(shape[1] * idx)..(shape[1] * idx + shape[1])]
+    // }
 
     /// Indexes the rows of a 2D matrix NdArray and returns `Vec<T>`
     pub fn index_vec(&self, idx: usize) -> Vec<T> {
