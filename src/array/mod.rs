@@ -330,7 +330,25 @@ fn _display_inner<T: Clone + Debug, const N: usize>(f: &mut fmt::Formatter<'_>, 
 fn _print_arrays<T: Clone + Debug, const N: usize>(f: &mut std::fmt::Formatter<'_>, array: &NdArray<T, N>) -> std::fmt::Result {
     match array.shape.len() {
         1 => {
-            f.write_str(format!("{:?}", array.data).as_str())?;
+            // f.write_str(format!("{:?}", array.data).as_str())?;
+            f.write_str("[")?;
+            let row_elements = 4;
+            let debug_rows = array.len() / row_elements;
+            for i in 0..debug_rows {
+                let axisindent = if i == 0 { 0 } else { 9 };
+                let num_commas = if i == debug_rows - 1 { 0 } else { 1 };
+                let num_newlines = if i == debug_rows - 1 { 0 } else { 1 };
+                let slice = &array.data[(i * row_elements)..(i * row_elements + row_elements)];
+                let slice_str = slice.into_iter().map(|el| format!("{:?}", el)).collect::<Vec<String>>().join(", ");
+                f.write_str(" ".repeat(axisindent).as_str())?;
+                f.write_str(slice_str.as_str())?;
+                f.write_str(",".repeat(num_commas).as_str())?;
+                f.write_str("\n".repeat(num_newlines).as_str())?;
+            }
+            let last_slice = &array.data[(debug_rows * row_elements)..(debug_rows * row_elements + array.len() % row_elements)];
+            let last_slice_str = last_slice.into_iter().map(|el| format!("{:?}", el)).collect::<Vec<String>>().join(", ");
+            f.write_str(last_slice_str.as_str())?;
+            f.write_str("]")?;
         },
         2 => {
             f.write_str("[")?;
@@ -387,7 +405,6 @@ where T: Debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.shape.len() {
             0 => write!(f, "NdArray([])"),
-            1 => write!(f, "NdArray({:?}, shape={:?})\n", self.data, self.shape),
             _ => {
                 f.write_str("NdArray(")?;
                 _print_arrays(f, &self)?;
