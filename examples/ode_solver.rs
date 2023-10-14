@@ -20,26 +20,8 @@ fn main() {
     let samples = 100;
     // Set initial conditions
     let initial_conditions = &[1.0, 0.0];
-    let mut u: NdArray<f64, 2> = NdArray::zeros([samples, initial_conditions.len()]);
-    let t = NdArray::linspace(x_start, x_end, samples);
-    for i in 0..initial_conditions.len() {
-        u[&[0, i]] = initial_conditions[i];
-    }
-    let h = (x_end - x_start) / samples as f64;
-    for i in 0..(samples - 1) {
-        let k1 = dydt(u.index_view(i), t[i]) * h;
-        let k2 = dydt(u.index_view(i) + &k1 * 0.5, t[i] + 0.5 * h) * h;
-        let k3 = dydt(u.index_view(i) + &k2 * 0.5, t[i] + 0.5 * h) * h;
-        let k4 = dydt(u.index_view(i) + &k3, t[i] + h) * h;
-        for j in 0..initial_conditions.len() {
-            u[&[i + 1, j]] = u[&[i, j]] + (k1[j] + 2.0 * (k2[j] + k3[j]) + k4[j]) / 6.0;
-        }
-    }
+    let (u, t) = elara_array::rk4(&dydt, initial_conditions, x_start, x_end, samples);
     println!("{:?}", t);
-
-    // for i in 0..u.shape()[0] {
-    //     println!("[{}, {}],", u[&[i, 0]], u[&[i, 1]]);
-    // }
     println!("{:?}", u);
 
 }

@@ -44,3 +44,23 @@ pub mod num;
 pub mod prelude;
 
 pub use array::NdArray;
+
+/// A basic Runge-Kutta 4th order solver
+pub fn rk4(f: &dyn Fn(NdArray<f64, 1>, f64) -> NdArray<f64, 1>, u0: &[f64], t0: f64, tf: f64, samples: usize) -> (NdArray<f64, 2>, NdArray<f64, 1>) {
+	let mut u: NdArray<f64, 2> = NdArray::zeros([samples, u0.len()]);
+    let t = NdArray::linspace(t0, tf, samples);
+    for i in 0..u0.len() {
+        u[&[0, i]] = u0[i];
+    }
+    let h = (tf - t0) / samples as f64;
+    for i in 0..(samples - 1) {
+        let k1 = f(u.index_view(i), t[i]) * h;
+        let k2 = f(u.index_view(i) + &k1 * 0.5, t[i] + 0.5 * h) * h;
+        let k3 = f(u.index_view(i) + &k2 * 0.5, t[i] + 0.5 * h) * h;
+        let k4 = f(u.index_view(i) + &k3, t[i] + h) * h;
+        for j in 0..u0.len() {
+            u[&[i + 1, j]] = u[&[i, j]] + (k1[j] + 2.0 * (k2[j] + k3[j]) + k4[j]) / 6.0;
+        }
+    }
+    (u, t)
+}
