@@ -65,6 +65,15 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         }
     }
 
+    /// Creates an allocated new NdArray
+    /// without filling it with values
+    pub fn empty(shape: [usize; N]) -> Self {
+    	NdArray {
+    		shape,
+    		data: Vec::with_capacity(shape.iter().product())
+    	}
+    }
+
     /// Creates a new NdArray filled with
     /// only ones
     pub fn ones(shape: [usize; N]) -> Self
@@ -74,15 +83,6 @@ impl<T: Clone, const N: usize> NdArray<T, N> {
         NdArray {
             shape,
             data: vec![T::one(); shape.iter().product()],
-        }
-    }
-
-    /// Creates a new NdArray of a shape without
-    /// specifying values
-    pub fn empty(shape: [usize; N]) -> Self {
-        NdArray {
-            shape,
-            data: Vec::new(),
         }
     }
 
@@ -518,6 +518,16 @@ impl<T: Clone> NdArray<T, 2> {
         for i in 0..contents.len() {
             self[&[idx, i]] = contents[i].clone()
         }
+    }
+
+	/// Gets the ith column of a 2D NdArray
+    pub fn index_column(&self, idx: usize) -> NdArray<T, 1> {
+    	let column_len = self.shape[0];
+    	let mut out = NdArray::empty([column_len]);
+    	for j in 0..column_len {
+    		out[j] = self[&[idx, j]].clone();
+    	}
+    	out
     }
 }
 
