@@ -1,5 +1,7 @@
 # elara-array
 
+> :warning: **IMPORTANT:** Project Elara has switched over to the open-source forge [Codeberg](https://codeberg.org/). The Project Elara repositories have been moved to [this Codeberg page](https://codeberg.org/elaraproject/). **This GitHub repository is no longer maintained**.
+
 This crate provides a fast, n-dimensional array for Project Elara with minimal dependencies. Note: this crate was once part of [`elara-math`](https://github.com/elaraproject/elara-math), but has been extracted into a standalone crate for separate development.
 
 ## Basic usage
